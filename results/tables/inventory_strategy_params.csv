@@ -1,0 +1,5 @@
+﻿material,strategy,safety_stock,reorder_point_R,order_qty_Q,max_inventory_S,review_period_T
+碟形弹簧,"(R,Q)",2375,15452,19051,-,-
+止推环,"(R,S)",559,4596,-,8706,-
+定位轴套,"(T,S)",881,-,-,5269,21天
+密封圈,静动结合,动态,动态,动态,动态,-

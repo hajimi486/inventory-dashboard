@@ -170,7 +170,7 @@ if page == "🏠 系统总览":
             st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-value">{format_currency(total_h)}</div>
-                <div class="metric-label">H公司原年总成本</div>
+                <div class="metric-label">H公司原季度总成本</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -178,7 +178,7 @@ if page == "🏠 系统总览":
             st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-value">{format_currency(total_opt)}</div>
-                <div class="metric-label">优化后年总成本</div>
+                <div class="metric-label">优化后季度总成本</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -186,7 +186,7 @@ if page == "🏠 系统总览":
             st.markdown(f"""
             <div class="metric-card" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);">
                 <div class="metric-value">{format_currency(total_saving)}</div>
-                <div class="metric-label">年节约总额</div>
+                <div class="metric-label">季度节约总额</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -230,7 +230,7 @@ if page == "🏠 系统总览":
             ))
             fig.update_layout(
                 barmode='group',
-                yaxis_title='年总成本（万元）',
+                yaxis_title='季度总成本（万元）',
                 xaxis_title='材料',
                 height=400,
                 template='plotly_white',
@@ -574,7 +574,7 @@ elif page == "🎲 蒙特卡洛仿真":
             fig.add_trace(go.Bar(name='优化后', x=mc[material_col], y=mc[opt_col] / WAN, 
                                 marker_color='#27ae60'))
             fig.update_layout(barmode='group', height=450, template='plotly_white',
-                            yaxis_title='年总成本（万元）')
+                            yaxis_title='季度总成本（万元）')
             st.plotly_chart(fig, use_container_width=True)
         
         # 详细数据表

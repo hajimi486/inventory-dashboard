@@ -158,6 +158,11 @@ def load_data():
     if os.path.exists(model_fc_path):
         data['model_forecast'] = pd.read_csv(model_fc_path)
     
+    # 4物料预测评估数据（与报告表4一致）
+    model_eval_path = os.path.join(DATA_DIR, "model_evaluation.csv")
+    if os.path.exists(model_eval_path):
+        data['model_evaluation'] = pd.read_csv(model_eval_path)
+    
     return data
 
 data = load_data()
@@ -321,10 +326,12 @@ if page == "🏠 系统总览":
             st.plotly_chart(fig2, use_container_width=True)
     
     # 模型预测对比
-    if 'model_comparison' in data:
-        st.markdown('<p class="section-header">预测模型性能对比（密封圈）</p>', unsafe_allow_html=True)
-        model_df = data['model_comparison']
-        st.dataframe(model_df, use_container_width=True, hide_index=True)
+    if 'model_evaluation' in data:
+        st.markdown('<p class="section-header">预测模型性能概览</p>', unsafe_allow_html=True)
+        eval_df = data['model_evaluation']
+        compare_df = eval_df[eval_df['model'].isin(['ARIMA', 'ARIMA-LSTM'])][['material', 'model', 'rmse', 'r2']].copy()
+        compare_df.columns = ['物料', '模型', 'RMSE', 'R²']
+        st.dataframe(compare_df, use_container_width=True, hide_index=True)
     
     # FCM分类概览
     st.markdown('<p class="section-header">FCM聚类分类概览</p>', unsafe_allow_html=True)
@@ -380,48 +387,57 @@ elif page == "📈 需求预测分析":
             fig.update_layout(template='plotly_white', height=400, xaxis_title='周', yaxis_title='需求量')
             st.plotly_chart(fig, use_container_width=True)
     
-    # 多模型预测对比（密封圈）
-    if 'model_comparison' in data:
-        st.markdown('<p class="section-header">多模型性能指标对比（密封圈13周测试集）</p>', unsafe_allow_html=True)
+    # 多模型预测对比 - 使用model_evaluation.csv（与报告表4一致）
+    if 'model_evaluation' in data:
+        st.markdown('<p class="section-header">4种物料预测模型性能对比</p>', unsafe_allow_html=True)
         
-        mdf = data['model_comparison']
+        eval_df = data['model_evaluation']
         
-        # 找指标列
-        rmse_col = next((c for c in mdf.columns if 'rmse' in c.lower()), None)
-        mape_col = next((c for c in mdf.columns if 'mape' in c.lower()), None)
-        r2_col = next((c for c in mdf.columns if 'r2' in c.lower() or 'r²' in c.lower()), None)
+        # 只展示ARIMA和ARIMA-LSTM（不含H公司）
+        compare_df = eval_df[eval_df['model'].isin(['ARIMA', 'ARIMA-LSTM'])].copy()
         
-        if rmse_col:
-            model_col = mdf.columns[0]
-            cols_for_subplot = []
-            titles = []
-            if rmse_col: cols_for_subplot.append(('RMSE', rmse_col, '#3498db'))
-            if mape_col: cols_for_subplot.append(('MAPE', mape_col, '#e67e22'))
-            if r2_col: cols_for_subplot.append(('R²', r2_col, '#2ecc71'))
-            
-            fig = make_subplots(rows=1, cols=len(cols_for_subplot),
-                               subplot_titles=[t[0] for t in cols_for_subplot])
-            
-            for i, (name, col, color) in enumerate(cols_for_subplot):
-                fig.add_trace(go.Bar(x=mdf[model_col], y=mdf[col], 
-                                    name=name, marker_color=color, showlegend=False), row=1, col=i+1)
-            
-            fig.update_layout(height=400, template='plotly_white')
-            st.plotly_chart(fig, use_container_width=True)
+        # 画分组柱状图
+        materials_list = compare_df['material'].unique()
+        metrics = ['rmse', 'r2']
+        metric_labels = {'rmse': 'RMSE', 'r2': 'R²'}
         
-        st.dataframe(mdf, use_container_width=True, hide_index=True)
-    
-    # 4种物料预测效果对比（报告表4数据）
-    st.markdown('<p class="section-header">4种物料预测效果对比（ARIMA vs ARIMA-LSTM）</p>', unsafe_allow_html=True)
-    
-    report_table4 = pd.DataFrame({
-        '物料': ['碟形弹簧', '碟形弹簧', '止推环', '止推环', '定位轴套', '定位轴套', '密封圈', '密封圈'],
-        '模型': ['ARIMA', 'ARIMA-LSTM', 'ARIMA', 'ARIMA-LSTM', 'ARIMA', 'ARIMA-LSTM', 'ARIMA', 'ARIMA-LSTM'],
-        'RMSE': [454.34, 259.15, 140.17, 82.47, 142.71, 77.47, 147.99, 85.07],
-        'MAPE': ['9.0%', '8.2%', '—', '—', '—', '—', '—', '—'],
-        'R²': [0.66, 0.89, 0.64, 0.87, 0.70, 0.91, 0.64, 0.88],
-    })
-    st.dataframe(report_table4, use_container_width=True, hide_index=True)
+        fig = make_subplots(rows=1, cols=2, subplot_titles=['RMSE', 'R²'])
+        
+        for model_name in ['ARIMA', 'ARIMA-LSTM']:
+            sub = compare_df[compare_df['model'] == model_name]
+            color = '#e74c3c' if model_name == 'ARIMA' else '#27ae60'
+            fig.add_trace(go.Bar(x=sub['material'], y=sub['rmse'], name=model_name,
+                                marker_color=color, showlegend=True), row=1, col=1)
+            fig.add_trace(go.Bar(x=sub['material'], y=sub['r2'], name=model_name,
+                                marker_color=color, showlegend=False), row=1, col=2)
+        
+        fig.update_layout(height=400, template='plotly_white',
+                         legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        fig.update_yaxes(title_text='RMSE', row=1, col=1)
+        fig.update_yaxes(title_text='R²', row=1, col=2)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 展示完整数据表
+        display_eval = compare_df[['material', 'model', 'rmse', 'mae', 'r2']].copy()
+        display_eval.columns = ['物料', '模型', 'RMSE', 'MAE', 'R²']
+        st.dataframe(display_eval, use_container_width=True, hide_index=True)
+        
+        # RMSE降低率汇总
+        st.markdown('<p class="section-header">ARIMA-LSTM相对ARIMA的改善</p>', unsafe_allow_html=True)
+        improvements = []
+        for mat in materials_list:
+            arima_row = compare_df[(compare_df['material'] == mat) & (compare_df['model'] == 'ARIMA')]
+            lstm_row = compare_df[(compare_df['material'] == mat) & (compare_df['model'] == 'ARIMA-LSTM')]
+            if len(arima_row) > 0 and len(lstm_row) > 0:
+                rmse_drop = (arima_row['rmse'].values[0] - lstm_row['rmse'].values[0]) / arima_row['rmse'].values[0] * 100
+                r2_gain = lstm_row['r2'].values[0] - arima_row['r2'].values[0]
+                improvements.append({
+                    '物料': mat,
+                    'RMSE降低': f"{rmse_drop:.1f}%",
+                    'R²提升': f"+{r2_gain:.2f}",
+                })
+        if improvements:
+            st.dataframe(pd.DataFrame(improvements), use_container_width=True, hide_index=True)
     
     # 13周预测值
     if 'model_forecast' in data:

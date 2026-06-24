@@ -636,8 +636,10 @@ elif page == "📦 库存策略优化":
         fig.add_trace(go.Scatter(x=mi['month'].astype(str)+'月', y=mi['raw_material_pct']*100,
                                 mode='lines+markers', name='原材料占比(%)', 
                                 yaxis='y2', line=dict(color='#e74c3c')))
-        fig.add_hline(y=70, line_dash="dash", line_color="gray", 
-                     annotation_text="行业理想值70%", yaxis='y2')
+        fig.add_hline(y=70, line_dash="dash", line_color="gray", yaxis='y2')
+        fig.add_annotation(x=0.5, y=70, text="行业理想值70%", yaxis='y2',
+                          showarrow=False, font=dict(size=10, color="gray"),
+                          xref="paper", xanchor="center")
         fig.update_layout(
             title='H公司2024年月度库存资金占用',
             yaxis_title='原材料占用(KEUR)',

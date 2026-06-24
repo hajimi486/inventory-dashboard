@@ -163,6 +163,11 @@ def load_data():
     if os.path.exists(model_eval_path):
         data['model_evaluation'] = pd.read_csv(model_eval_path)
     
+    # 结构性指标（周转率/平均库存/资金占用/缺货占比）
+    structural_path = os.path.join(RESULT_TABLE_DIR, "structural_metrics.csv")
+    if os.path.exists(structural_path):
+        data['structural_metrics'] = pd.read_csv(structural_path)
+    
     return data
 
 data = load_data()
@@ -716,6 +721,112 @@ elif page == "🎲 蒙特卡洛仿真":
             col2.metric("H公司成本", format_currency(h_cost))
             col3.metric("优化后成本", format_currency(o_cost))
             col4.metric("节约率", f"{rate:.1f}%", delta=format_currency(saving))
+    
+    # 结构性指标：周转率、平均库存、资金占用、缺货占比
+    if 'structural_metrics' in data:
+        sm = data['structural_metrics']
+        mat_col_sm = sm.columns[0]
+        
+        st.markdown("---")
+        st.markdown('<p class="section-header">库存结构性指标对比</p>', unsafe_allow_html=True)
+        st.markdown("""
+        > 优化策略的核心机制是"以持有换缺货"：通过合理提高安全库存水平，持有成本适度上升，
+        > 但缺货成本大幅下降，运营总成本显著降低。周转率下降和资金占用上升是换取更高服务水平和更低总成本的合理代价。
+        """)
+        
+        # 顶部汇总指标卡
+        total_holding_h = mc['h_holding'].sum()
+        total_holding_opt = mc['opt_holding'].sum()
+        total_stockout_h = mc['h_stockout'].sum()
+        total_stockout_opt = mc['opt_stockout'].sum()
+        holding_change = (total_holding_opt - total_holding_h) / total_holding_h * 100
+        stockout_change = (total_stockout_opt - total_stockout_h) / total_stockout_h * 100
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("持有成本变化", f"+{holding_change:.1f}%", delta="以持有换缺货")
+        col2.metric("缺货成本变化", f"{stockout_change:.1f}%", delta="大幅下降", delta_color="normal")
+        col3.metric("库存总成本节约", "9.9%", delta="41.0万元/季")
+        col4.metric("缺货成本占比", f"{total_stockout_h/(mc['h_operational'].sum())*100:.1f}% → {total_stockout_opt/(mc['opt_operational'].sum())*100:.1f}%", delta="显著改善")
+        
+        # 周转率对比柱状图
+        st.markdown('<p class="section-header">季度周转率对比</p>', unsafe_allow_html=True)
+        
+        fig_to = go.Figure()
+        materials_sm = sm[mat_col_sm].tolist()
+        fig_to.add_trace(go.Bar(
+            x=materials_sm, y=sm['turnover_h_quarterly'],
+            name='H公司原策略', marker_color='#3498db', width=0.35
+        ))
+        fig_to.add_trace(go.Bar(
+            x=materials_sm, y=sm['turnover_opt_quarterly'],
+            name='优化策略', marker_color='#e67e22', width=0.35
+        ))
+        fig_to.update_layout(
+            barmode='group', height=380, template='plotly_white',
+            yaxis_title='季度周转率（次/季）',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            annotations=[
+                dict(x=mat, y=max(sm.loc[sm[mat_col_sm]==mat, 'turnover_h_quarterly'].values[0],
+                                  sm.loc[sm[mat_col_sm]==mat, 'turnover_opt_quarterly'].values[0]) + 0.5,
+                     text=f"↓{((sm.loc[sm[mat_col_sm]==mat, 'turnover_opt_quarterly'].values[0] - sm.loc[sm[mat_col_sm]==mat, 'turnover_h_quarterly'].values[0]) / sm.loc[sm[mat_col_sm]==mat, 'turnover_h_quarterly'].values[0] * 100):.1f}%",
+                     showarrow=False, font=dict(size=11, color='#e74c3c'))
+                for mat in materials_sm
+            ]
+        )
+        st.plotly_chart(fig_to, use_container_width=True)
+        
+        # 平均库存与资金占用对比
+        st.markdown('<p class="section-header">平均库存与资金占用变化</p>', unsafe_allow_html=True)
+        
+        fig_inv = make_subplots(rows=1, cols=2, subplot_titles=['平均库存量（件）', '库存资金占用（万元）'])
+        
+        fig_inv.add_trace(go.Bar(
+            x=materials_sm, y=sm['avg_inv_h_units'], name='H公司', marker_color='#3498db', width=0.35
+        ), row=1, col=1)
+        fig_inv.add_trace(go.Bar(
+            x=materials_sm, y=sm['avg_inv_opt_units'], name='优化', marker_color='#e67e22', width=0.35
+        ), row=1, col=1)
+        
+        fig_inv.add_trace(go.Bar(
+            x=materials_sm, y=sm['avg_inv_value_h'] / WAN, name='H公司', marker_color='#3498db', showlegend=False, width=0.35
+        ), row=1, col=2)
+        fig_inv.add_trace(go.Bar(
+            x=materials_sm, y=sm['avg_inv_value_opt'] / WAN, name='优化', marker_color='#e67e22', showlegend=False, width=0.35
+        ), row=1, col=2)
+        
+        fig_inv.update_layout(barmode='group', height=380, template='plotly_white',
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        fig_inv.update_yaxes(title_text='库存量（件）', row=1, col=1)
+        fig_inv.update_yaxes(title_text='资金占用（万元）', row=1, col=2)
+        st.plotly_chart(fig_inv, use_container_width=True)
+        
+        # 缺货成本占比对比
+        st.markdown('<p class="section-header">缺货成本占比变化</p>', unsafe_allow_html=True)
+        
+        fig_so_ratio = go.Figure()
+        fig_so_ratio.add_trace(go.Bar(
+            x=materials_sm, y=sm['stockout_cost_ratio_h'],
+            name='H公司原策略', marker_color='#e74c3c', width=0.35
+        ))
+        fig_so_ratio.add_trace(go.Bar(
+            x=materials_sm, y=sm['stockout_cost_ratio_opt'],
+            name='优化策略', marker_color='#2ecc71', width=0.35
+        ))
+        fig_so_ratio.update_layout(
+            barmode='group', height=350, template='plotly_white',
+            yaxis_title='缺货成本占运营总成本比例（%）',
+            yaxis_tickformat='.1f',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02)
+        )
+        st.plotly_chart(fig_so_ratio, use_container_width=True)
+        
+        # 完整数据表
+        st.markdown('<p class="section-header">结构性指标明细</p>', unsafe_allow_html=True)
+        display_sm = sm.copy()
+        for col in display_sm.columns:
+            if display_sm[col].dtype in ['float64', 'float32']:
+                display_sm[col] = display_sm[col].round(2)
+        st.dataframe(display_sm, use_container_width=True, hide_index=True)
     
     # 仿真参数说明
     st.markdown("---")

@@ -772,7 +772,7 @@ elif page == "🎲 蒙特卡洛仿真":
             annotations=[
                 dict(x=mat, y=max(sm.loc[sm[mat_col_sm]==mat, 'turnover_h_quarterly'].values[0],
                                   sm.loc[sm[mat_col_sm]==mat, 'turnover_opt_quarterly'].values[0]) + 0.5,
-                     text=f"↓{((sm.loc[sm[mat_col_sm]==mat, 'turnover_opt_quarterly'].values[0] - sm.loc[sm[mat_col_sm]==mat, 'turnover_h_quarterly'].values[0]) / sm.loc[sm[mat_col_sm]==mat, 'turnover_h_quarterly'].values[0] * 100):.1f}%",
+                     text=f"↓{abs((sm.loc[sm[mat_col_sm]==mat, 'turnover_opt_quarterly'].values[0] - sm.loc[sm[mat_col_sm]==mat, 'turnover_h_quarterly'].values[0]) / sm.loc[sm[mat_col_sm]==mat, 'turnover_h_quarterly'].values[0] * 100):.1f}%",
                      showarrow=False, font=dict(size=11, color='#e74c3c'))
                 for mat in materials_sm
             ]

@@ -66,8 +66,8 @@ def render():
 
         with col_d:
             st.markdown("**密封圈**")
-            d_mean_4 = st.number_input("周均需求", value=1946, key="d_mean_4")
-            d_std_4 = st.number_input("需求标准差(件/周)", value=895, key="d_std_4")
+            d_mean_4 = st.number_input("周均需求", value=1400, key="d_mean_4")
+            d_std_4 = st.number_input("需求标准差(件/周)", value=560, key="d_std_4")
             d_price_4 = st.number_input("单价(元)", value=15.50, key="d_price_4")
             d_order_cost_4 = st.number_input("订货成本(元/次)", value=12000, key="d_order_cost_4")
             d_holding_4 = st.number_input("存储成本(元/件/周)", value=1.75, key="d_holding_4")
@@ -146,22 +146,25 @@ def render():
         st.dataframe(stats_display, use_container_width=True, hide_index=True)
 
     # ---- 第3步：FCM分类与策略匹配 ----
-    st.markdown('<p class="section-header">Step 3: FCM Classification & Strategy Matching</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-header">第3步：FCM分类与策略匹配</p>', unsafe_allow_html=True)
 
     if materials_info:
         for m in materials_info:
             cv = m['cv']
             price = m.get('price', 10)
-            if cv <= 0.1 and price >= 10:
-                category, strategy, service_level = "I-Strategic(steady)", "(R,Q) Continuous", 0.99
-            elif cv <= 0.2 and price >= 15:
-                category, strategy, service_level = "II-Bottleneck(steady)", "(R,S) Continuous", 0.95
-            elif cv <= 0.3:
-                category, strategy, service_level = "IV-General(steady)", "(T,S) Periodic", 0.95
-            elif cv > 0.4:
-                category, strategy, service_level = "III-Leverage(non-steady)", "Static-Dynamic", 0.95
+            # FCM分类：基于变异系数CV + 价值特征，与报告表6一致
+            # Ⅰ-战略型: 高价值+平稳需求 → (R,Q)  SL=99%
+            # Ⅱ-瓶颈型: 中高价值+平稳需求 → (R,S)  SL=95%
+            # Ⅲ-杠杆型: 非平稳需求(CV>=0.4) → 静动结合  SL=95%
+            # Ⅳ-一般型: 低价值+平稳需求 → (T,S)  SL=95%
+            if cv >= 0.4:
+                category, strategy, service_level = "Ⅲ-杠杆型（非平稳）", "静动结合", 0.95
+            elif cv <= 0.1 and price >= 10:
+                category, strategy, service_level = "Ⅰ-战略型（平稳）", "(R,Q)", 0.99
+            elif cv <= 0.2:
+                category, strategy, service_level = "Ⅱ-瓶颈型（平稳）", "(R,S)", 0.95
             else:
-                category, strategy, service_level = "IV-General(mid)", "(T,S) Periodic", 0.95
+                category, strategy, service_level = "Ⅳ-一般型（平稳）", "(T,S)", 0.95
             m['category'] = category
             m['strategy'] = strategy
             m['service_level'] = service_level
@@ -173,9 +176,9 @@ def render():
         st.dataframe(class_df, use_container_width=True, hide_index=True)
 
     # ---- 第4步：策略参数计算 ----
-    st.markdown('<p class="section-header">Step 4: Auto Parameter Calculation</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-header">第4步：策略参数自动计算</p>', unsafe_allow_html=True)
 
-    if materials_info and st.button("🔧 Calculate Parameters", key="calc_params"):
+    if materials_info and st.button("🔧 计算策略参数", key="calc_params"):
         params_results = []
         for m in materials_info:
             d_bar = m['mean']
@@ -185,7 +188,7 @@ def render():
             L_weeks = m.get('leadtime_days', 7) / 7.0
             z = sp_stats.norm.ppf(sl)
 
-            if strategy == "(R,Q) Continuous":
+            if strategy == "(R,Q)":
                 SS = z * sigma_d * np.sqrt(L_weeks)
                 R = d_bar * L_weeks + SS
                 holding = m.get('holding', 1.40)
@@ -196,7 +199,7 @@ def render():
                     'SS': f"{SS:.0f}", 'R': f"{R:.0f}", 'Q': f"{Q:.0f}",
                     'SL': f"{sl*100:.0f}%", 'L(weeks)': f"{L_weeks:.1f}"
                 })
-            elif strategy == "(R,S) Continuous":
+            elif strategy == "(R,S)":
                 SS = z * sigma_d * np.sqrt(L_weeks)
                 R = d_bar * L_weeks + SS
                 S = d_bar * (L_weeks + 2) + SS
@@ -205,38 +208,38 @@ def render():
                     'SS': f"{SS:.0f}", 'R': f"{R:.0f}", 'S': f"{S:.0f}",
                     'SL': f"{sl*100:.0f}%", 'L(weeks)': f"{L_weeks:.1f}"
                 })
-            elif strategy == "(T,S) Periodic":
+            elif strategy == "(T,S)":
                 T_weeks = 3
                 sigma_TL = sigma_d * np.sqrt(T_weeks + L_weeks)
                 SS = z * sigma_TL
                 S = d_bar * (T_weeks + L_weeks) + SS
                 params_results.append({
                     'material': m['name'], 'strategy': strategy,
-                    'SS': f"{SS:.0f}", 'T': f"{T_weeks*7:.0f}days", 'S': f"{S:.0f}",
+                    'SS': f"{SS:.0f}", 'T': f"{T_weeks*7:.0f}天", 'S': f"{S:.0f}",
                     'SL': f"{sl*100:.0f}%", 'L(weeks)': f"{L_weeks:.1f}"
                 })
-            elif strategy == "Static-Dynamic":
+            elif strategy == "静动结合":
                 params_results.append({
                     'material': m['name'], 'strategy': strategy,
-                    'period': '13 weeks', 'SL': f"{sl*100:.0f}%",
-                    'note': 'Static base + dynamic adjustment', 'L(weeks)': f"{L_weeks:.1f}"
+                    'period': '13周', 'SL': f"{sl*100:.0f}%",
+                    'note': '静态基准量+动态调整量', 'L(weeks)': f"{L_weeks:.1f}"
                 })
 
         if params_results:
             st.dataframe(pd.DataFrame(params_results), use_container_width=True, hide_index=True)
-            st.success("✅ Parameters calculated!")
+            st.success("✅ 参数计算完成！")
 
     # ---- 第5步：蒙特卡洛仿真 ----
-    st.markdown('<p class="section-header">Step 5: Monte Carlo Simulation</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-header">第5步：蒙特卡洛仿真验证</p>', unsafe_allow_html=True)
 
     if materials_info:
         col_sim1, col_sim2 = st.columns(2)
         with col_sim1:
-            n_sims = st.selectbox("Iterations", [1000, 5000, 10000], index=1, key="n_sims")
+            n_sims = st.selectbox("仿真次数", [1000, 5000, 10000], index=1, key="n_sims")
         with col_sim2:
-            sim_days = st.selectbox("Sim days", [91, 182, 365], index=0, key="sim_days")
+            sim_days = st.selectbox("仿真天数", [91, 182, 365], index=0, key="sim_days")
 
-        if st.button("🎲 Run Simulation", key="run_mc"):
+        if st.button("🎲 运行仿真", key="run_mc"):
             progress_bar = st.progress(0)
             status_text = st.empty()
             sim_results = []
@@ -252,15 +255,15 @@ def render():
                 stockout = m.get('stockout', 154)
                 order_cost = m.get('order_cost', 18650)
 
-                if strategy == "(R,Q) Continuous":
+                if strategy == "(R,Q)":
                     SS = z * sigma_d * np.sqrt(L_weeks)
                     R_param = d_bar * L_weeks + SS
                     Q_param = np.sqrt(2 * d_bar * 52 * order_cost / (holding * 52))
-                elif strategy == "(R,S) Continuous":
+                elif strategy == "(R,S)":
                     SS = z * sigma_d * np.sqrt(L_weeks)
                     R_param = d_bar * L_weeks + SS
                     S_param = d_bar * (L_weeks + 2) + SS
-                elif strategy == "(T,S) Periodic":
+                elif strategy == "(T,S)":
                     T_w = 3
                     SS = z * sigma_d * np.sqrt(T_w + L_weeks)
                     S_param = d_bar * (T_w + L_weeks) + SS
@@ -278,15 +281,15 @@ def render():
                             tot_so += (demand - inv) * stockout
                             inv = 0
                         tot_h += inv * holding / 7
-                        if strategy == "(R,Q) Continuous":
+                        if strategy == "(R,Q)":
                             if inv <= R_param / 7:
                                 tot_ord += order_cost
                                 inv += Q_param / 7
-                        elif strategy == "(R,S) Continuous":
+                        elif strategy == "(R,S)":
                             if inv <= R_param / 7:
                                 tot_ord += order_cost
                                 inv = S_param / 7
-                        elif strategy == "(T,S) Periodic":
+                        elif strategy == "(T,S)":
                             if day % 21 == 0:
                                 tot_ord += order_cost
                                 inv = S_param / 7
@@ -318,13 +321,13 @@ def render():
                 saving_rate = saving / avg_h * 100 if avg_h > 0 else 0
 
                 sim_results.append({
-                    'material': m['name'], 'strategy': strategy,
-                    'orig_cost': f"{avg_h:,.0f}", 'opt_cost': f"{avg_opt:,.0f}",
-                    'saving': f"{saving:,.0f}", 'rate': f"{saving_rate:.1f}%"
+                    '物料': m['name'], '策略': strategy,
+                    '原策略成本': f"{avg_h:,.0f}", '优化后成本': f"{avg_opt:,.0f}",
+                    '节约额': f"{saving:,.0f}", '节约率': f"{saving_rate:.1f}%"
                 })
                 progress = (m_idx + 1) / len(materials_info)
                 progress_bar.progress(progress)
-                status_text.text(f"Progress: {m_idx+1}/{len(materials_info)} - {m['name']} done")
+                status_text.text(f"进度: {m_idx+1}/{len(materials_info)} - {m['name']} 完成")
 
             progress_bar.empty()
             status_text.empty()
@@ -334,12 +337,12 @@ def render():
                 st.dataframe(sim_df, use_container_width=True, hide_index=True)
 
                 fig = go.Figure()
-                names = [r['material'] for r in sim_results]
-                h_costs = [float(r['orig_cost'].replace(',', '')) for r in sim_results]
-                opt_costs = [float(r['opt_cost'].replace(',', '')) for r in sim_results]
-                fig.add_trace(go.Bar(name='Original', x=names, y=[c / WAN for c in h_costs], marker_color='#e74c3c'))
-                fig.add_trace(go.Bar(name='Optimized', x=names, y=[c / WAN for c in opt_costs], marker_color='#27ae60'))
-                fig.update_layout(barmode='group', title='Annual Cost Comparison',
-                                  yaxis_title='Cost (wan yuan)', template='plotly_white', height=400)
+                names = [r['物料'] for r in sim_results]
+                h_costs = [float(r['原策略成本'].replace(',', '')) for r in sim_results]
+                opt_costs = [float(r['优化后成本'].replace(',', '')) for r in sim_results]
+                fig.add_trace(go.Bar(name='H公司原策略', x=names, y=[c / WAN for c in h_costs], marker_color='#e74c3c'))
+                fig.add_trace(go.Bar(name='优化策略', x=names, y=[c / WAN for c in opt_costs], marker_color='#27ae60'))
+                fig.update_layout(barmode='group', title='成本对比（年度化）',
+                                  yaxis_title='成本（万元）', template='plotly_white', height=400)
                 st.plotly_chart(fig, use_container_width=True)
-                st.success("✅ Simulation complete! Adjust parameters and re-run as needed.")
+                st.success("✅ 仿真完成！可调整参数后重新运行。")

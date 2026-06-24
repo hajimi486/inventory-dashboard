@@ -1,6 +1,6 @@
 """
-Streamlit 可视化决策看板 —— 面向汽车零部件的库存管理优化系统
-运行方式: streamlit run E:\库存优化竞赛\dashboard\app.py
+Streamlit 库存管理决策系统 —— 面向汽车零部件的库存管理优化
+运行方式: streamlit run app.py
 """
 
 import streamlit as st
@@ -28,7 +28,7 @@ RESULT_FIG_DIR = os.path.join(BASE_DIR, "results", "figures")
 # 页面配置
 # ============================================================
 st.set_page_config(
-    page_title="库存管理优化决策看板",
+    page_title="库存管理决策系统",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -56,6 +56,56 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
+# 正确的物料主数据（与报告/inventory_params.csv一致）
+# ============================================================
+MATERIALS_MASTER = {
+    '碟形弹簧': {
+        'category': 'Ⅰ-1', 'category_name': '战略型（平稳）',
+        'strategy': '(R,Q)', 'strategy_full': '(R,Q) 连续检查策略',
+        'cv': 0.06, 'cv_type': '平稳',
+        'd_bar': 13622, 'sigma_d': 785, 'price': 10.57,
+        'holding': 1.40, 'stockout': 154, 'order_cost': 18650,
+        'SL': 0.99, 'leadtime_weeks': 1,
+        'SS': 1830, 'R': 15452, 'Q': 19051, 'S': None, 'T_days': None,
+    },
+    '止推环': {
+        'category': 'Ⅱ-1', 'category_name': '瓶颈型（平稳）',
+        'strategy': '(R,S)', 'strategy_full': '(R,S) 连续检查策略',
+        'cv': 0.10, 'cv_type': '平稳',
+        'd_bar': 2055, 'sigma_d': 208, 'price': 20.50,
+        'holding': 1.40, 'stockout': 127, 'order_cost': 6500,
+        'SL': 0.95, 'leadtime_weeks': 2,
+        'SS': 486, 'R': 4596, 'Q': None, 'S': 8706, 'T_days': None,
+    },
+    '定位轴套': {
+        'category': 'Ⅳ-1', 'category_name': '一般型（平稳）',
+        'strategy': '(T,S)', 'strategy_full': '(T,S) 周期检查策略',
+        'cv': 0.26, 'cv_type': '平稳',
+        'd_bar': 884, 'sigma_d': 230, 'price': 7.38,
+        'holding': 1.05, 'stockout': 60, 'order_cost': 4100,
+        'SL': 0.95, 'leadtime_weeks': 2,
+        'SS': 849, 'R': None, 'Q': None, 'S': 5269, 'T_days': 21,
+    },
+    '密封圈': {
+        'category': 'Ⅲ-2', 'category_name': '杠杆型（非平稳）',
+        'strategy': '静动结合', 'strategy_full': '静动结合策略',
+        'cv': 0.46, 'cv_type': '非平稳',
+        'd_bar': 1400, 'sigma_d': 560, 'price': 15.50,
+        'holding': 1.75, 'stockout': 115, 'order_cost': 12000,
+        'SL': 0.95, 'leadtime_weeks': 1,
+        'SS': 500, 'R': None, 'Q': None, 'S': None, 'T_days': None,
+    },
+}
+
+# FCM 4大类定义
+FCM_CATEGORIES = {
+    'Ⅰ-战略型': {'count': 319, 'desc': '高价值+高关键性，缺货影响大', 'representative': '碟形弹簧'},
+    'Ⅱ-瓶颈型': {'count': 65, 'desc': '高供应风险，替代性低', 'representative': '止推环'},
+    'Ⅲ-杠杆型': {'count': 193, 'desc': '高消耗量，替代品较多', 'representative': '密封圈'},
+    'Ⅳ-一般型': {'count': 76, 'desc': '低价值+低风险', 'representative': '定位轴套'},
+}
+
+# ============================================================
 # 数据加载（带缓存）
 # ============================================================
 @st.cache_data
@@ -78,6 +128,10 @@ def load_data():
     monthly_path = os.path.join(DATA_DIR, "monthly_inventory_2024.csv")
     if os.path.exists(monthly_path):
         data['monthly_inv'] = pd.read_csv(monthly_path)
+    
+    demand_err_path = os.path.join(DATA_DIR, "demand_forecast_error_2024.csv")
+    if os.path.exists(demand_err_path):
+        data['demand_error'] = pd.read_csv(demand_err_path)
     
     # 结果数据
     model_cmp_path = os.path.join(RESULT_TABLE_DIR, "model_comparison.csv")
@@ -111,7 +165,7 @@ data = load_data()
 # ============================================================
 # 侧边栏
 # ============================================================
-st.sidebar.markdown("## 📊 库存管理优化系统")
+st.sidebar.markdown("## 📊 库存管理决策系统")
 st.sidebar.markdown("---")
 st.sidebar.markdown("**面向汽车零部件的库存管理优化**")
 st.sidebar.markdown("基于FCM聚类 + 多模型预测 + 蒙特卡洛仿真")
@@ -150,7 +204,7 @@ def calc_saving_class(saving_rate):
 # 页面1: 系统总览
 # ============================================================
 if page == "🏠 系统总览":
-    st.markdown('<p class="main-title">📊 库存管理优化决策看板</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-title">📊 库存管理决策系统</p>', unsafe_allow_html=True)
     st.markdown("---")
     
     # 顶部关键指标
@@ -158,7 +212,7 @@ if page == "🏠 系统总览":
     
     if 'mc_comparison' in data:
         mc = data['mc_comparison']
-        # 优先使用需求采购口径
+        # 使用需求采购口径
         h_col = 'h_total_demand' if 'h_total_demand' in mc.columns else 'h_company_cost'
         opt_col = 'opt_total_demand' if 'opt_total_demand' in mc.columns else 'optimized_cost'
         total_h = mc[h_col].sum()
@@ -268,9 +322,17 @@ if page == "🏠 系统总览":
     
     # 模型预测对比
     if 'model_comparison' in data:
-        st.markdown('<p class="section-header">预测模型性能对比</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">预测模型性能对比（密封圈）</p>', unsafe_allow_html=True)
         model_df = data['model_comparison']
         st.dataframe(model_df, use_container_width=True, hide_index=True)
+    
+    # FCM分类概览
+    st.markdown('<p class="section-header">FCM聚类分类概览</p>', unsafe_allow_html=True)
+    fcm_overview = pd.DataFrame([
+        {'类别': k, '种类数': v['count'], '特征描述': v['desc'], '代表物料': v['representative']}
+        for k, v in FCM_CATEGORIES.items()
+    ])
+    st.dataframe(fcm_overview, use_container_width=True, hide_index=True)
 
 # ============================================================
 # 页面2: 需求预测分析
@@ -279,70 +341,91 @@ elif page == "📈 需求预测分析":
     st.markdown('<p class="main-title">📈 需求预测分析</p>', unsafe_allow_html=True)
     st.markdown("---")
     
+    # H公司预测偏差（表2数据）
+    if 'demand_error' in data:
+        st.markdown('<p class="section-header">H公司2024年月度需求预测偏差</p>', unsafe_allow_html=True)
+        de = data['demand_error']
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=de['month'].astype(str) + '月',
+            y=de['relative_error'] * 100,
+            marker_color=['#e74c3c' if abs(e) > 0.15 else '#3498db' for e in de['relative_error']],
+            text=[f"{e*100:.1f}%" for e in de['relative_error']],
+            textposition='outside'
+        ))
+        fig.add_hline(y=0, line_dash="dash", line_color="gray")
+        fig.update_layout(
+            title='H公司经验判断法月度预测偏差（MAPE=18.64%）',
+            yaxis_title='相对误差（%）',
+            xaxis_title='月份',
+            height=400,
+            template='plotly_white'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(de, use_container_width=True, hide_index=True)
+    
     # ARIMA分析
     if 'seal_ring' in data:
         st.markdown('<p class="section-header">密封圈130周需求序列</p>', unsafe_allow_html=True)
         
         seal = data['seal_ring']
-        # 尝试找数值列
         num_cols = seal.select_dtypes(include=[np.number]).columns.tolist()
         week_col = 'week' if 'week' in seal.columns else None
-        if num_cols:
-            fig = px.line(seal, x=week_col, y=num_cols[-1] if 'demand' not in seal.columns else 'demand',
+        y_col = 'demand' if 'demand' in seal.columns else (num_cols[-1] if num_cols else None)
+        
+        if y_col:
+            fig = px.line(seal, x=week_col, y=y_col,
                          title='密封圈历史需求序列（130周）')
             fig.update_layout(template='plotly_white', height=400, xaxis_title='周', yaxis_title='需求量')
             st.plotly_chart(fig, use_container_width=True)
     
-    # 多模型预测对比
+    # 多模型预测对比（密封圈）
     if 'model_comparison' in data:
-        st.markdown('<p class="section-header">多模型性能指标对比</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">多模型性能指标对比（密封圈13周测试集）</p>', unsafe_allow_html=True)
         
         mdf = data['model_comparison']
         
-        # 找RMSE列
-        rmse_col = None
-        for c in mdf.columns:
-            if 'rmse' in c.lower():
-                rmse_col = c
-                break
+        # 找指标列
+        rmse_col = next((c for c in mdf.columns if 'rmse' in c.lower()), None)
+        mape_col = next((c for c in mdf.columns if 'mape' in c.lower()), None)
+        r2_col = next((c for c in mdf.columns if 'r2' in c.lower() or 'r²' in c.lower()), None)
         
         if rmse_col:
             model_col = mdf.columns[0]
-            fig = make_subplots(rows=1, cols=3,
-                               subplot_titles=['RMSE', 'MAPE', 'R²'])
+            cols_for_subplot = []
+            titles = []
+            if rmse_col: cols_for_subplot.append(('RMSE', rmse_col, '#3498db'))
+            if mape_col: cols_for_subplot.append(('MAPE', mape_col, '#e67e22'))
+            if r2_col: cols_for_subplot.append(('R²', r2_col, '#2ecc71'))
             
-            # RMSE
-            fig.add_trace(go.Bar(x=mdf[model_col], y=mdf[rmse_col], 
-                                name='RMSE', marker_color='#3498db'), row=1, col=1)
+            fig = make_subplots(rows=1, cols=len(cols_for_subplot),
+                               subplot_titles=[t[0] for t in cols_for_subplot])
             
-            # MAPE
-            mape_col = None
-            for c in mdf.columns:
-                if 'mape' in c.lower():
-                    mape_col = c
-                    break
-            if mape_col:
-                fig.add_trace(go.Bar(x=mdf[model_col], y=mdf[mape_col], 
-                                    name='MAPE', marker_color='#e67e22'), row=1, col=2)
+            for i, (name, col, color) in enumerate(cols_for_subplot):
+                fig.add_trace(go.Bar(x=mdf[model_col], y=mdf[col], 
+                                    name=name, marker_color=color, showlegend=False), row=1, col=i+1)
             
-            # R²
-            r2_col = None
-            for c in mdf.columns:
-                if 'r2' in c.lower() or 'r²' in c.lower():
-                    r2_col = c
-                    break
-            if r2_col:
-                fig.add_trace(go.Bar(x=mdf[model_col], y=mdf[r2_col], 
-                                    name='R²', marker_color='#2ecc71'), row=1, col=3)
-            
-            fig.update_layout(height=400, template='plotly_white', showlegend=False)
+            fig.update_layout(height=400, template='plotly_white')
             st.plotly_chart(fig, use_container_width=True)
         
         st.dataframe(mdf, use_container_width=True, hide_index=True)
     
+    # 4种物料预测效果对比（报告表4数据）
+    st.markdown('<p class="section-header">4种物料预测效果对比（ARIMA vs ARIMA-LSTM）</p>', unsafe_allow_html=True)
+    
+    report_table4 = pd.DataFrame({
+        '物料': ['碟形弹簧', '碟形弹簧', '止推环', '止推环', '定位轴套', '定位轴套', '密封圈', '密封圈'],
+        '模型': ['ARIMA', 'ARIMA-LSTM', 'ARIMA', 'ARIMA-LSTM', 'ARIMA', 'ARIMA-LSTM', 'ARIMA', 'ARIMA-LSTM'],
+        'RMSE': [454.34, 259.15, 140.17, 82.47, 142.71, 77.47, 147.99, 85.07],
+        'MAPE': ['9.0%', '8.2%', '—', '—', '—', '—', '—', '—'],
+        'R²': [0.66, 0.89, 0.64, 0.87, 0.70, 0.91, 0.64, 0.88],
+    })
+    st.dataframe(report_table4, use_container_width=True, hide_index=True)
+    
     # 13周预测值
     if 'model_forecast' in data:
-        st.markdown('<p class="section-header">13周预测值对比</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">密封圈13周预测值对比</p>', unsafe_allow_html=True)
         fc_df = data['model_forecast']
         st.dataframe(fc_df, use_container_width=True, hide_index=True)
     
@@ -351,22 +434,16 @@ elif page == "📈 需求预测分析":
         st.markdown('<p class="section-header">ARIMA密封圈预测详情</p>', unsafe_allow_html=True)
         af = data['arima_forecast']
         
-        # 找实际值和预测值列
-        actual_col = None
-        forecast_col = None
-        for c in af.columns:
-            if 'actual' in c.lower() or '真实' in c:
-                actual_col = c
-            if 'forecast' in c.lower() or '预测' in c:
-                forecast_col = c
+        actual_col = 'actual'
+        forecast_col = 'arima_forecast'
+        x_col = 'week' if 'week' in af.columns else None
         
-        if actual_col and forecast_col:
-            x_col = 'week' if 'week' in af.columns else af.index
+        if actual_col in af.columns and forecast_col in af.columns:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=af[x_col] if isinstance(x_col, str) else af.index, 
+            fig.add_trace(go.Scatter(x=af[x_col] if x_col else af.index, 
                                     y=af[actual_col], mode='lines+markers', 
                                     name='实际值', line=dict(color='#2c3e50')))
-            fig.add_trace(go.Scatter(x=af[x_col] if isinstance(x_col, str) else af.index, 
+            fig.add_trace(go.Scatter(x=af[x_col] if x_col else af.index, 
                                     y=af[forecast_col], mode='lines+markers', 
                                     name='ARIMA预测', line=dict(color='#e74c3c', dash='dash')))
             fig.update_layout(title='密封圈ARIMA(3,2,3)预测 vs 实际',
@@ -382,67 +459,88 @@ elif page == "🏷️ FCM聚类分类":
     st.markdown("---")
     
     # 聚类结果展示
-    st.markdown('<p class="section-header">聚类结果</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-header">FCM聚类结果（4大类）</p>', unsafe_allow_html=True)
     
     cluster_data = {
-        '材料': ['碟形弹簧', '止推环', '定位轴套', '密封圈'],
-        '聚类': ['类别A（高价值平稳）', '类别A（高价值平稳）', '类别C（非平稳）', '类别B（中等波动）'],
-        '隶属度': [0.984, 0.377, 0.989, 0.983],
-        '推荐策略': ['(R,Q) 连续检查', '(R,Q) 连续检查', '静动结合策略', '(R,S) 连续检查']
+        '类别': ['Ⅰ-战略型', 'Ⅱ-瓶颈型', 'Ⅲ-杠杆型', 'Ⅳ-一般型'],
+        '种类数': [319, 65, 193, 76],
+        '特征描述': ['高价值+高关键性，缺货影响大', '高供应风险，替代性低', '高消耗量，替代品较多', '低价值+低风险'],
+        '代表物料': ['碟形弹簧', '止推环', '密封圈', '定位轴套'],
     }
     cluster_df = pd.DataFrame(cluster_data)
     st.dataframe(cluster_df, use_container_width=True, hide_index=True)
     
-    # 特征矩阵
-    st.markdown('<p class="section-header">需求特征矩阵</p>', unsafe_allow_html=True)
-    feature_data = {
-        '材料': ['碟形弹簧', '止推环', '定位轴套', '密封圈'],
-        '均值需求': [13659.5, 2052.2, 901.2, 1946.2],
-        '标准差': [778.2, 232.8, 260.7, 192.6],
-        '变异系数CV': [0.057, 0.113, 0.289, 0.099],
-        '趋势强度': [0.306, 0.313, 0.183, 0.101],
-        '斜率': [63.7, 19.5, -12.7, 5.2]
+    # 需求变异系数细分
+    st.markdown('<p class="section-header">综合分类结果（FCM + 需求变异系数CV）</p>', unsafe_allow_html=True)
+    
+    subcat_data = {
+        '类别': ['Ⅰ-战略型', 'Ⅱ-瓶颈型', 'Ⅲ-杠杆型', 'Ⅳ-一般型'],
+        '平稳(CV≤0.4)': ['Ⅰ-1(55种)', 'Ⅱ-1(45种)', 'Ⅲ-1(150种)', 'Ⅳ-1(247种)'],
+        '非平稳(CV>0.4)': ['Ⅰ-2(21种)', 'Ⅱ-2(20种)', 'Ⅲ-2(43种)', 'Ⅳ-2(72种)'],
     }
-    feature_df = pd.DataFrame(feature_data)
-    st.dataframe(feature_df, use_container_width=True, hide_index=True)
+    subcat_df = pd.DataFrame(subcat_data)
+    st.dataframe(subcat_df, use_container_width=True, hide_index=True)
     
-    # 雷达图
-    st.markdown('<p class="section-header">FCM聚类特征雷达图</p>', unsafe_allow_html=True)
+    # 4种核心物料分类详情
+    st.markdown('<p class="section-header">4种核心物料细分结果</p>', unsafe_allow_html=True)
     
-    radar_path = os.path.join(RESULT_FIG_DIR, "fcm_radar.png")
-    if os.path.exists(radar_path):
-        st.image(radar_path, use_container_width=True)
-    else:
-        # 用plotly画
-        categories = ['均值需求', '标准差', '变异系数CV', '趋势强度', '斜率']
-        materials = ['碟形弹簧', '止推环', '定位轴套', '密封圈']
-        raw_vals = [
-            [13659.5, 778.2, 0.057, 0.306, 63.7],
-            [2052.2, 232.8, 0.113, 0.313, 19.5],
-            [901.2, 260.7, 0.289, 0.183, -12.7],
-            [1946.2, 192.6, 0.099, 0.101, 5.2],
-        ]
-        colors_r = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12']
-        
-        # 归一化到0-1
-        arr = np.array(raw_vals)
-        arr_min = arr.min(axis=0)
-        arr_max = arr.max(axis=0)
-        arr_norm = (arr - arr_min) / (arr_max - arr_min + 1e-10)
-        
-        fig = go.Figure()
-        for i, mat in enumerate(materials):
-            fig.add_trace(go.Scatterpolar(
-                r=arr_norm[i].tolist() + [arr_norm[i][0]],
-                theta=categories + [categories[0]],
-                fill='toself',
-                name=mat,
-                opacity=0.6,
-                line=dict(color=colors_r[i])
-            ))
-        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-                         showlegend=True, height=500, template='plotly_white')
-        st.plotly_chart(fig, use_container_width=True)
+    core_class = pd.DataFrame({
+        '物料': ['碟形弹簧', '止推环', '定位轴套', '密封圈'],
+        '分类': ['Ⅰ-1 战略型（平稳）', 'Ⅱ-1 瓶颈型（平稳）', 'Ⅳ-1 一般型（平稳）', 'Ⅲ-2 杠杆型（非平稳）'],
+        '变异系数CV': [0.06, 0.10, 0.26, 0.46],
+        '推荐策略': ['(R,Q) 连续检查', '(R,S) 连续检查', '(T,S) 周期检查', '静动结合'],
+    })
+    st.dataframe(core_class, use_container_width=True, hide_index=True)
+    
+    # 雷达图 - 3维（CV, 需求均值, 波动性）
+    st.markdown('<p class="section-header">4种原材料需求特征雷达图</p>', unsafe_allow_html=True)
+    
+    # 用plotly画正确的3维雷达图
+    categories = ['变异系数CV', '需求均值', '波动系数(σ/√d̄)']
+    mat_names = ['碟形弹簧', '止推环', '定位轴套', '密封圈']
+    colors_r = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12']
+    
+    # 原始值
+    raw_vals = {
+        '变异系数CV': [0.06, 0.10, 0.26, 0.46],
+        '需求均值': [13622, 2055, 884, 1400],
+        '波动系数(σ/√d̄)': [785/np.sqrt(13622), 208/np.sqrt(2055), 230/np.sqrt(884), 560/np.sqrt(1400)],
+    }
+    
+    # 归一化到0-1
+    arr = np.array([[raw_vals[c][i] for c in categories] for i in range(4)])
+    arr_min = arr.min(axis=0)
+    arr_max = arr.max(axis=0)
+    arr_norm = (arr - arr_min) / (arr_max - arr_min + 1e-10)
+    
+    fig = go.Figure()
+    for i, mat in enumerate(mat_names):
+        fig.add_trace(go.Scatterpolar(
+            r=arr_norm[i].tolist() + [arr_norm[i][0]],
+            theta=categories + [categories[0]],
+            fill='toself',
+            name=mat,
+            opacity=0.5,
+            line=dict(color=colors_r[i], width=2)
+        ))
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 1], tickvals=[0, 0.25, 0.5, 0.75, 1.0])),
+        showlegend=True, height=500, template='plotly_white',
+        title='4种原材料需求特征雷达图（归一化）'
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # 原始值对照表
+    st.markdown('<p class="section-header">特征原始值</p>', unsafe_allow_html=True)
+    feature_raw = pd.DataFrame({
+        '物料': mat_names,
+        '变异系数CV': [0.06, 0.10, 0.26, 0.46],
+        '周均需求(件)': [13622, 2055, 884, 1400],
+        '需求标准差(件/周)': [785, 208, 230, 560],
+        '波动系数(σ/√d̄)': [f"{v:.2f}" for v in [785/np.sqrt(13622), 208/np.sqrt(2055), 230/np.sqrt(884), 560/np.sqrt(1400)]],
+        '需求特性': ['平稳', '平稳', '平稳', '非平稳'],
+    })
+    st.dataframe(feature_raw, use_container_width=True, hide_index=True)
     
     # 聚类散点图
     st.markdown('<p class="section-header">聚类散点图</p>', unsafe_allow_html=True)
@@ -458,56 +556,75 @@ elif page == "📦 库存策略优化":
     st.markdown("---")
     
     # 策略映射
-    st.markdown('<p class="section-header">FCM聚类 → 策略映射</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-header">FCM聚类 → 分类-策略映射</p>', unsafe_allow_html=True)
     
     strategy_map = pd.DataFrame({
-        '聚类类别': ['类别A（高价值平稳）', '类别B（中等波动）', '类别C（非平稳）'],
-        '特征描述': ['需求平稳、价值高、变异系数低', '需求中等波动、价值适中', '需求不稳定、变异系数高'],
-        '推荐策略': ['(R,Q) 连续检查策略', '(R,S) 连续检查策略', '静动结合策略'],
-        '策略原理': [
-            '固定订货量Q，库存降至R即触发订货',
-            '库存降至R即订货至最高水平S',
-            '平稳期用固定参数，波动期动态调整订货时点和订货量'
-        ]
+        '子类': ['Ⅰ-1 战略型（平稳）', 'Ⅱ-1 瓶颈型（平稳）', 'Ⅳ-1 一般型（平稳）', 'Ⅲ-2 杠杆型（非平稳）'],
+        '需求特征': ['高价值+平稳需求', '中价值+平稳需求', '低价值+平稳需求', '中价值+非平稳需求'],
+        '推荐策略': ['(R,Q) 连续检查', '(R,S) 连续检查', '(T,S) 周期检查', '静动结合策略'],
+        '选择理由': [
+            '实时监控，经济批量订货，最高服务水平',
+            '触发即补至目标水平，简化补货决策',
+            '减少监控频率，定期补充，降低管理成本',
+            '静态基准量+动态调整量，适应需求波动'
+        ],
+        '适用物料': ['碟形弹簧', '止推环', '定位轴套', '密封圈'],
     })
     st.dataframe(strategy_map, use_container_width=True, hide_index=True)
     
-    # 策略参数
+    # 策略参数（从inventory_params.csv读取）
     st.markdown('<p class="section-header">各材料库存策略参数</p>', unsafe_allow_html=True)
     
     if 'strategy_params' in data:
         st.dataframe(data['strategy_params'], use_container_width=True, hide_index=True)
     else:
-        # 硬编码参数表
-        params_data = {
+        params_data = pd.DataFrame({
             '材料': ['碟形弹簧', '止推环', '定位轴套', '密封圈'],
-            '策略类型': ['(R,Q)', '(R,S)', '(T,S)静动结合', '(R,S)'],
-            '安全库存ss': [6316, 826, 1038, '动态调整'],
-            '订货点R': [24624, 6477, '—', '动态调整'],
-            '订货量Q/最高库存S': [19051, 8532, 7182, '动态调整'],
+            '策略': ['(R,Q)', '(R,S)', '(T,S)', '静动结合'],
+            '安全库存SS': [1830, 486, 849, 500],
+            '订货点R': [15452, 4596, '—', '动态调整'],
+            '订货量Q/最高库存S': [19051, 8706, 5269, '动态调整'],
             '检查周期T': ['—', '—', '21天', '—'],
-            '服务水平': ['99%', '95%', '95%', '95%']
-        }
-        st.dataframe(pd.DataFrame(params_data), use_container_width=True, hide_index=True)
+            '服务水平': ['99%', '95%', '95%', '95%'],
+        })
+        st.dataframe(params_data, use_container_width=True, hide_index=True)
     
-    # H公司原参数 vs 优化参数对比
-    st.markdown('<p class="section-header">原参数 vs 优化参数对比</p>', unsafe_allow_html=True)
+    # 完整参数对比
+    st.markdown('<p class="section-header">4种物料关键参数一览</p>', unsafe_allow_html=True)
     
-    comparison = pd.DataFrame({
-        '材料': ['碟形弹簧', '止推环', '定位轴套', '密封圈'],
-        '原策略': ['(R,Q)', '(R,Q)', '(R,Q)', '(R,Q)'],
-        '原订货点R': [14260, 3970, 1775, 2180],
-        '优化策略': ['(R,Q)', '(R,S)', '(T,S)', '静动结合'],
-        '优化关键参数': ['R=15452,Q=19051', 'R=4596,S=8706', 'T=21天,S=5269', '周次[1,3,6,8,10]'],
-        '服务水平': ['99%', '95%', '95%', '95%']
+    full_params = pd.DataFrame({
+        '物料': ['碟形弹簧', '止推环', '定位轴套', '密封圈'],
+        '分类': ['Ⅰ-1 战略型（平稳）', 'Ⅱ-1 瓶颈型（平稳）', 'Ⅳ-1 一般型（平稳）', 'Ⅲ-2 杠杆型（非平稳）'],
+        '策略': ['(R,Q)', '(R,S)', '(T,S)', '静动结合'],
+        '周均需求': ['13,622件', '2,055件', '884件', '1,400件'],
+        '变异系数CV': [0.06, 0.10, 0.26, 0.46],
+        '单价(元)': [10.57, 20.50, 7.38, 15.50],
+        '服务水平': ['99%', '95%', '95%', '95%'],
+        '核心参数': ['R=15,452, Q=19,051', 'R=4,596, S=8,706', 'T=21天, S=5,269', '周期13周'],
     })
-    st.dataframe(comparison, use_container_width=True, hide_index=True)
+    st.dataframe(full_params, use_container_width=True, hide_index=True)
     
     # 月度库存趋势
     if 'monthly_inv' in data:
         st.markdown('<p class="section-header">H公司2024年月度库存占用</p>', unsafe_allow_html=True)
         mi = data['monthly_inv']
-        st.dataframe(mi, use_container_width=True, hide_index=True)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=mi['month'].astype(str)+'月', y=mi['raw_material_KEUR'], 
+                            name='原材料占用', marker_color='#3498db'))
+        fig.add_trace(go.Scatter(x=mi['month'].astype(str)+'月', y=mi['raw_material_pct']*100,
+                                mode='lines+markers', name='原材料占比(%)', 
+                                yaxis='y2', line=dict(color='#e74c3c')))
+        fig.add_hline(y=70, line_dash="dash", line_color="gray", 
+                     annotation_text="行业理想值70%", yaxis='y2')
+        fig.update_layout(
+            title='H公司2024年月度库存资金占用',
+            yaxis_title='原材料占用(KEUR)',
+            yaxis2=dict(title='原材料占比(%)', overlaying='y', side='right', range=[60, 90]),
+            height=450, template='plotly_white',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02)
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
 # 页面5: 蒙特卡洛仿真
@@ -530,7 +647,6 @@ elif page == "🎲 蒙特卡洛仿真":
         # 成本分项对比
         st.markdown('<p class="section-header">成本分项对比（堆叠柱状图）</p>', unsafe_allow_html=True)
         
-        # 检查是否有分项数据
         has_breakdown = all(c in mc.columns for c in ['h_holding', 'h_ordering', 'h_stockout'])
         
         if has_breakdown:
@@ -538,7 +654,6 @@ elif page == "🎲 蒙特卡洛仿真":
             
             fig = make_subplots(rows=1, cols=2, subplot_titles=['H公司原策略', '优化策略'])
             
-            # H公司
             fig.add_trace(go.Bar(x=materials, y=mc['h_holding'] / WAN, name='持有成本', 
                                 marker_color='#3498db'), row=1, col=1)
             fig.add_trace(go.Bar(x=materials, y=mc['h_ordering'] / WAN, name='订货成本', 
@@ -546,7 +661,6 @@ elif page == "🎲 蒙特卡洛仿真":
             fig.add_trace(go.Bar(x=materials, y=mc['h_stockout'] / WAN, name='缺货成本', 
                                 marker_color='#e74c3c'), row=1, col=1)
             
-            # 优化
             opt_hold_col = 'opt_holding' if 'opt_holding' in mc.columns else mc.columns[4]
             opt_ord_col = 'opt_ordering' if 'opt_ordering' in mc.columns else mc.columns[5]
             opt_so_col = 'opt_stockout' if 'opt_stockout' in mc.columns else mc.columns[6]
@@ -562,19 +676,6 @@ elif page == "🎲 蒙特卡洛仿真":
                             legend=dict(orientation="h", yanchor="bottom", y=1.02))
             fig.update_yaxes(title_text='成本（万元）', row=1, col=1)
             fig.update_yaxes(title_text='成本（万元）', row=1, col=2)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            # 无分项数据，简单总成本对比
-            h_col = 'h_company_cost' if 'h_company_cost' in mc.columns else mc.columns[1]
-            opt_col = 'optimized_cost' if 'optimized_cost' in mc.columns else mc.columns[2]
-            
-            fig = go.Figure()
-            fig.add_trace(go.Bar(name='H公司', x=mc[material_col], y=mc[h_col] / WAN, 
-                                marker_color='#e74c3c'))
-            fig.add_trace(go.Bar(name='优化后', x=mc[material_col], y=mc[opt_col] / WAN, 
-                                marker_color='#27ae60'))
-            fig.update_layout(barmode='group', height=450, template='plotly_white',
-                            yaxis_title='季度总成本（万元）')
             st.plotly_chart(fig, use_container_width=True)
         
         # 详细数据表
@@ -606,10 +707,10 @@ elif page == "🎲 蒙特卡洛仿真":
     
     params_info = pd.DataFrame({
         '参数': ['仿真次数', '仿真周期', '采购成本口径', '初始库存', '需求分布', '提前期分布', '缺货模式'],
-        '取值': ['5000次', '91天（1季度）', '需求驱动(demand×单价)', '论文实际值', '正态分布', '经验分布（来自论文）', 'Lost Sales'],
+        '取值': ['5000次', '91天（1季度）', '需求驱动(demand×单价)', 'H公司实际值', '正态分布', '经验分布（来自H公司）', 'Lost Sales'],
         '说明': [
             '蒙特卡洛重复次数',
-            '与论文一致的季度仿真周期',
+            '对齐企业季度考核周期',
             '消除缺货少买的虚假节约，公平比较运营效率',
             '采用H公司实际初始库存',
             'N(μ, σ²)，参数由历史数据估计',
@@ -626,72 +727,84 @@ elif page == "📋 策略参数详情":
     st.markdown('<p class="main-title">📋 策略参数详情</p>', unsafe_allow_html=True)
     st.markdown("---")
     
-    # 各材料详细参数
+    # 各材料详细参数（使用MATERIALS_MASTER）
     materials_detail = [
         {
             'name': '碟形弹簧',
-            'cluster': '类别A（高价值平稳）',
+            'cluster': 'Ⅰ-1 战略型（平稳）',
             'strategy': '(R,Q) 连续检查策略',
             'params': {
-                'H公司订货点R': 14260,
-                'H公司订货量Q': 17000,
-                '优化订货点R': 15452,
-                '优化订货量Q': 19051,
-                '服务水平': '99%',
-                '提前期均值': '6.7天',
+                '周均需求d̄': '13,622件',
+                '需求标准差σ_d': '785件/周',
+                '变异系数CV': '0.06（平稳）',
+                '再订货点R': '15,452件',
+                '订货量Q': '19,051件',
+                '安全库存SS': '1,830件',
+                '服务水平': '99%（z=2.326）',
+                '提前期均值': '6.7天（约1周）',
                 '单价': '10.57元',
-                '日均需求': 1946
+                '存储成本': '1.40元/件/周',
+                '缺货成本': '154元/件',
             },
-            'why': '高价值+高需求+低波动→高服务水平+连续检查，避免缺货导致高额停产损失'
+            'why': '高价值+核心零件→最高服务水平99%，(R,Q)策略通过EOQ原理确定固定批量Q，最小化总订货成本，实时监控避免缺货导致产线停线'
         },
         {
             'name': '止推环',
-            'cluster': '类别A（高价值平稳）',
+            'cluster': 'Ⅱ-1 瓶颈型（平稳）',
             'strategy': '(R,S) 连续检查策略',
             'params': {
-                'H公司订货点R': 3970,
-                'H公司订货量Q': 4200,
-                '优化订货点R': 4596,
-                '优化最高库存S': 8706,
-                '服务水平': '95%',
-                '提前期均值': '13.8天',
+                '周均需求d̄': '2,055件',
+                '需求标准差σ_d': '208件/周',
+                '变异系数CV': '0.10（平稳）',
+                '再订货点R': '4,596件',
+                '最高库存S': '8,706件',
+                '安全库存SS': '486件',
+                '服务水平': '95%（z=1.645）',
+                '提前期均值': '13.8天（约2周）',
                 '单价': '20.50元',
-                '日均需求': 294
+                '存储成本': '1.40元/件/周',
+                '缺货成本': '127元/件',
             },
-            'why': '中等价值+中等波动→95%服务水平，(R,S)策略订至最高水平S简化补货决策'
+            'why': '瓶颈型物料+供应风险高→(R,S)策略补至目标水平S，订货量随当前库存自适应匹配，灵活应对小幅需求波动'
         },
         {
             'name': '定位轴套',
-            'cluster': '类别C（非平稳）',
-            'strategy': '(T,S) 定期检查策略',
+            'cluster': 'Ⅳ-1 一般型（平稳）',
+            'strategy': '(T,S) 周期检查策略',
             'params': {
-                'H公司订货点R': 1775,
-                'H公司订货量Q': 2000,
-                '优化检查周期T': '21天',
-                '优化最高库存S': 5269,
-                '服务水平': '95%',
-                '提前期均值': '13.8天',
+                '周均需求d̄': '884件',
+                '需求标准差σ_d': '230件/周',
+                '变异系数CV': '0.26（平稳）',
+                '检查周期T': '21天（3周）',
+                '最高库存S': '5,269件',
+                '安全库存SS': '849件',
+                '服务水平': '95%（z=1.645）',
+                '提前期均值': '13.8天（约2周）',
                 '单价': '7.38元',
-                '日均需求': 126
+                '存储成本': '1.05元/件/周',
+                '缺货成本': '60元/件',
             },
-            'why': '低价值+高波动+需求不稳定→定期检查策略，平稳期用固定周期和目标库存'
+            'why': '低价值+需求平稳→周期检查策略，牺牲一定库存精度（风险暴露期从L延长至T+L=5周），但大幅降低监控成本，成本效益最优'
         },
         {
             'name': '密封圈',
-            'cluster': '类别C（非平稳）',
+            'cluster': 'Ⅲ-2 杠杆型（非平稳）',
             'strategy': '静动结合策略',
             'params': {
-                'H公司订货点R': 2180,
-                'H公司订货量Q': 2800,
-                '优化订货周次': '[1,3,6,8,10]',
-                '优化订货量': '动态调整',
+                '周均需求d̄': '1,400件',
+                '需求标准差σ_d': '560件/周',
+                '变异系数CV': '0.46（非平稳，CV>0.4）',
+                '计划周期': '13周（1个季度）',
                 '服务水平': '95%',
-                '提前期均值': '7.0天',
+                '提前期均值': '6.9天（约1周）',
                 '单价': '15.50元',
-                '日均需求': 278
+                '存储成本': '1.75元/件/周',
+                '缺货成本': '115元/件',
+                '订货周次': '第1,3,6,8,10周',
+                '策略机制': '静态基准量+动态调整量',
             },
-            'why': '高波动(CV=0.46>0.4)→静动结合，平稳期用固定参数，波动期动态调整订货时点和订货量'
-        }
+            'why': 'CV=0.46>0.4，需求波动显著→静动结合策略：静态基准量保障供应连续性下限，动态调整量根据ARIMA-LSTM预测偏差实时调整订货量'
+        },
     ]
     
     for mat in materials_detail:
@@ -736,7 +849,7 @@ elif page == "🔄 数据更新":
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #999; font-size: 0.8rem;'>
-    面向汽车零部件的库存管理优化系统 | 2026年中国大学生机械工程创新创意大赛<br>
+    面向汽车零部件的库存管理决策系统 | 2026年中国大学生机械工程创新创意大赛<br>
     数驱精益，智融创新
 </div>
 """, unsafe_allow_html=True)

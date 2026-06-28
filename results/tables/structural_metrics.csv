@@ -1,5 +1,5 @@
-﻿material,avg_inv_h_units,avg_inv_opt_units,avg_inv_value_h,avg_inv_value_opt,turnover_h_quarterly,turnover_opt_quarterly,capital_change_pct,stockout_cost_ratio_h,stockout_cost_ratio_opt
-碟形弹簧,9800,11981,103582,126640,18.07,14.78,22.3,40.4,12.3
-止推环,2201,2763,45129,56634,12.13,9.67,25.5,53.3,7.3
-定位轴套,1348,2551,9949,18823,8.81,4.66,89.2,46.4,4.0
-密封圈,1710,5037,26507,78069,14.83,5.04,194.5,57.8,14.6
+﻿material,turnover_h_quarterly,turnover_opt_quarterly,avg_inv_h_units,avg_inv_opt_units,avg_inv_value_h,avg_inv_value_opt,stockout_cost_ratio_h,stockout_cost_ratio_opt
+碟形弹簧,19.17,15.49,9236.2,11430.2,97626,120817,6.7,0.1
+止推环,12.57,9.96,2125.2,2681.3,43567,54968,51.2,1.8
+定位轴套,8.79,4.61,1336.9,2549.8,9866,18818,43.8,2.2
+密封圈,8.41,5.89,2163.4,3090.7,33533,47906,4.3,1.9

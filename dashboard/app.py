@@ -222,19 +222,21 @@ if page == "🏠 系统总览":
     
     if 'mc_comparison' in data:
         mc = data['mc_comparison']
-        # 使用需求采购口径
-        h_col = 'h_total_demand' if 'h_total_demand' in mc.columns else 'h_company_cost'
-        opt_col = 'opt_total_demand' if 'opt_total_demand' in mc.columns else 'optimized_cost'
+        # 统一使用运营成本口径（持有+订货+缺货），采购成本在两种策略下相同
+        h_col = 'h_operational' if 'h_operational' in mc.columns else 'h_company_cost'
+        opt_col = 'opt_operational' if 'opt_operational' in mc.columns else 'optimized_cost'
         total_h = mc[h_col].sum()
         total_opt = mc[opt_col].sum()
         total_saving = total_h - total_opt
         avg_rate = (total_saving / total_h * 100) if total_h > 0 else 0
+        h_op_col = h_col
+        opt_op_col = opt_col
         
         with col1:
             st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-value">{format_currency(total_h)}</div>
-                <div class="metric-label">H公司原季度总成本</div>
+                <div class="metric-label">H公司季度运营成本</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -242,7 +244,7 @@ if page == "🏠 系统总览":
             st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-value">{format_currency(total_opt)}</div>
-                <div class="metric-label">优化后季度总成本</div>
+                <div class="metric-label">优化后季度运营成本</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -250,7 +252,7 @@ if page == "🏠 系统总览":
             st.markdown(f"""
             <div class="metric-card" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);">
                 <div class="metric-value">{format_currency(total_saving)}</div>
-                <div class="metric-label">季度节约总额</div>
+                <div class="metric-label">季度运营节约</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -271,11 +273,11 @@ if page == "🏠 系统总览":
         mc = data['mc_comparison']
         
         with col_left:
-            st.markdown('<p class="section-header">各材料成本对比（需求驱动采购口径）</p>', unsafe_allow_html=True)
+            st.markdown('<p class="section-header">各材料运营成本对比（持有 + 订货 + 缺货）</p>', unsafe_allow_html=True)
             
             material_col = 'material' if 'material' in mc.columns else mc.columns[0]
-            h_col = 'h_total_demand' if 'h_total_demand' in mc.columns else 'h_company_cost'
-            opt_col = 'opt_total_demand' if 'opt_total_demand' in mc.columns else 'optimized_cost'
+            h_col = 'h_operational' if 'h_operational' in mc.columns else 'h_company_cost'
+            opt_col = 'opt_operational' if 'opt_operational' in mc.columns else 'optimized_cost'
             
             fig = go.Figure()
             fig.add_trace(go.Bar(
@@ -294,7 +296,7 @@ if page == "🏠 系统总览":
             ))
             fig.update_layout(
                 barmode='group',
-                yaxis_title='季度总成本（万元）',
+                yaxis_title='季度运营成本（万元）',
                 xaxis_title='材料',
                 height=400,
                 template='plotly_white',
@@ -305,10 +307,14 @@ if page == "🏠 系统总览":
         with col_right:
             st.markdown('<p class="section-header">各材料节约率</p>', unsafe_allow_html=True)
             
+            h_op_col = 'h_operational' if 'h_operational' in mc.columns else h_col
+            opt_op_col = 'opt_operational' if 'opt_operational' in mc.columns else opt_col
             saving_rates = []
             for _, row in mc.iterrows():
-                if row[h_col] > 0:
-                    saving_rates.append((row[h_col] - row[opt_col]) / row[h_col] * 100)
+                h_op = row[h_op_col]
+                opt_op = row[opt_op_col]
+                if h_op > 0:
+                    saving_rates.append((h_op - opt_op) / h_op * 100)
                 else:
                     saving_rates.append(0)
             
@@ -708,17 +714,21 @@ elif page == "🎲 蒙特卡洛仿真":
         st.dataframe(mc, use_container_width=True, hide_index=True)
         
         # 节约率汇总
-        st.markdown('<p class="section-header">各材料节约率（需求驱动采购口径）</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">各材料节约率（运营成本口径：持有+订货+缺货）</p>', unsafe_allow_html=True)
         
-        h_col_mc = 'h_total_demand' if 'h_total_demand' in mc.columns else 'h_company_cost'
-        opt_col_mc = 'opt_total_demand' if 'opt_total_demand' in mc.columns else 'optimized_cost'
+        h_op_mc = 'h_operational' if 'h_operational' in mc.columns else 'h_company_cost'
+        opt_op_mc = 'opt_operational' if 'opt_operational' in mc.columns else 'optimized_cost'
+        h_col_mc = h_op_mc
+        opt_col_mc = opt_op_mc
         
         for _, row in mc.iterrows():
             mat = row[material_col]
-            h_cost = row[h_col_mc]
-            o_cost = row[opt_col_mc]
+            h_cost = row[h_op_mc]
+            o_cost = row[opt_op_mc]
+            h_op = row[h_op_mc]
+            opt_op = row[opt_op_mc]
             saving = h_cost - o_cost
-            rate = saving / h_cost * 100 if h_cost > 0 else 0
+            rate = (h_op - opt_op) / h_op * 100 if h_op > 0 else 0
             
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("材料", mat)
@@ -749,7 +759,12 @@ elif page == "🎲 蒙特卡洛仿真":
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("持有成本变化", f"+{holding_change:.1f}%", delta="以持有换缺货")
         col2.metric("缺货成本变化", f"{stockout_change:.1f}%", delta="大幅下降", delta_color="normal")
-        col3.metric("库存总成本节约", "9.9%", delta="41.0万元/季")
+        # 从实际仿真数据计算（节约率基于运营成本）
+        total_h_cost_summary = mc[h_op_mc].sum()
+        total_opt_cost_summary = mc[opt_op_mc].sum()
+        total_saving_val = total_h_cost_summary - total_opt_cost_summary
+        total_saving_pct = total_saving_val / total_h_cost_summary * 100 if total_h_cost_summary > 0 else 0
+        col3.metric("库存总成本节约", f"{total_saving_pct:.1f}%", delta=format_currency(total_saving_val))
         col4.metric("缺货成本占比", f"{total_stockout_h/(mc['h_operational'].sum())*100:.1f}% → {total_stockout_opt/(mc['opt_operational'].sum())*100:.1f}%", delta="显著改善")
         
         # 周转率对比柱状图

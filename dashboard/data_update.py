@@ -5,10 +5,14 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os
 import plotly.graph_objects as go
 from scipy import stats as sp_stats
 
 WAN = 10000
+
+# Result paths for cross-page data sharing
+RESULT_TABLE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results", "tables")
 
 
 def render():
@@ -229,120 +233,115 @@ def render():
             st.dataframe(pd.DataFrame(params_results), use_container_width=True, hide_index=True)
             st.success("✅ 参数计算完成！")
 
-    # ---- 第5步：蒙特卡洛仿真 ----
+    # ---- 第5步：蒙特卡洛仿真验证 ----
     st.markdown('<p class="section-header">第5步：蒙特卡洛仿真验证</p>', unsafe_allow_html=True)
 
-    if materials_info:
-        col_sim1, col_sim2 = st.columns(2)
-        with col_sim1:
-            n_sims = st.selectbox("仿真次数", [1000, 5000, 10000], index=1, key="n_sims")
-        with col_sim2:
-            sim_days = st.selectbox("仿真天数", [91, 182, 365], index=0, key="sim_days")
+    col_sim1, col_sim2 = st.columns(2)
+    with col_sim1:
+        n_sims = st.selectbox("仿真次数", [1000, 5000, 10000], index=1, key="n_sims")
+    with col_sim2:
+        sim_days = st.selectbox("仿真天数", [91, 182, 365], index=0, key="sim_days")
 
-        if st.button("🎲 运行仿真", key="run_mc"):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            sim_results = []
+    col_out1, col_out2 = st.columns(2)
+    with col_out1:
+        output_period = st.selectbox("成本输出周期", ["季度（91天）", "半年度（182天）", "年度（365天）"], index=0, key="output_period")
+    with col_out2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("💡 *当前使用源代码引擎（5000次×91天），参数选择将在后续版本支持自定义*")
 
-            for m_idx, m in enumerate(materials_info):
-                d_bar = m['mean']
-                sigma_d = m['std']
-                strategy = m['strategy']
-                sl = m['service_level']
-                L_weeks = m.get('leadtime_days', 7) / 7.0
-                z = sp_stats.norm.ppf(sl)
-                holding = m.get('holding', 1.40)
-                stockout = m.get('stockout', 154)
-                order_cost = m.get('order_cost', 18650)
+    src_script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                               "src", "03_fcm_inventory_montecarlo.py")
 
-                if strategy == "(R,Q)":
-                    SS = z * sigma_d * np.sqrt(L_weeks)
-                    R_param = d_bar * L_weeks + SS
-                    Q_param = np.sqrt(2 * d_bar * 52 * order_cost / (holding * 52))
-                elif strategy == "(R,S)":
-                    SS = z * sigma_d * np.sqrt(L_weeks)
-                    R_param = d_bar * L_weeks + SS
-                    S_param = d_bar * (L_weeks + 2) + SS
-                elif strategy == "(T,S)":
-                    T_w = 3
-                    SS = z * sigma_d * np.sqrt(T_w + L_weeks)
-                    S_param = d_bar * (T_w + L_weeks) + SS
+    if st.button("🎲 运行仿真", key="run_mc"):
+        with st.spinner(f"正在运行蒙特卡洛仿真（{n_sims}次 × {sim_days}天），请稍候..."):
+            import subprocess
+            import sys
 
-                # Optimized strategy sim
-                total_cost_opt = 0
-                for _ in range(n_sims):
-                    inv = d_bar * 2
-                    tot_h = tot_so = tot_ord = 0
-                    for day in range(sim_days):
-                        demand = max(0, np.random.normal(d_bar / 7, sigma_d / 7))
-                        if inv >= demand:
-                            inv -= demand
-                        else:
-                            tot_so += (demand - inv) * stockout
-                            inv = 0
-                        tot_h += inv * holding / 7
-                        if strategy == "(R,Q)":
-                            if inv <= R_param / 7:
-                                tot_ord += order_cost
-                                inv += Q_param / 7
-                        elif strategy == "(R,S)":
-                            if inv <= R_param / 7:
-                                tot_ord += order_cost
-                                inv = S_param / 7
-                        elif strategy == "(T,S)":
-                            if day % 21 == 0:
-                                tot_ord += order_cost
-                                inv = S_param / 7
-                    total_cost_opt += (tot_h + tot_so + tot_ord) * 365 / sim_days
+            # Set matplotlib to non-interactive backend to avoid GUI issues
+            env = os.environ.copy()
+            env['MPLBACKEND'] = 'Agg'
 
-                # Original strategy sim
-                total_cost_h = 0
-                R_h = d_bar * 1.0
-                Q_h = d_bar * 1.3
-                for _ in range(n_sims):
-                    inv = d_bar * 2
-                    tot_h = tot_so = tot_ord = 0
-                    for day in range(sim_days):
-                        demand = max(0, np.random.normal(d_bar / 7, sigma_d / 7))
-                        if inv >= demand:
-                            inv -= demand
-                        else:
-                            tot_so += (demand - inv) * stockout
-                            inv = 0
-                        tot_h += inv * holding / 7
-                        if inv <= R_h / 7:
-                            tot_ord += order_cost
-                            inv += Q_h / 7
-                    total_cost_h += (tot_h + tot_so + tot_ord) * 365 / sim_days
+            try:
+                result = subprocess.run(
+                    [sys.executable, src_script],
+                    capture_output=True, text=True, timeout=300,
+                    cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    env=env
+                )
 
-                avg_opt = total_cost_opt / n_sims
-                avg_h = total_cost_h / n_sims
-                saving = avg_h - avg_opt
-                saving_rate = saving / avg_h * 100 if avg_h > 0 else 0
+                if result.returncode != 0:
+                    # Write error log for debugging
+                    log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "simulation_error.log")
+                    with open(log_path, 'w', encoding='utf-8') as lf:
+                        lf.write(f"=== Return Code: {result.returncode} ===\n")
+                        lf.write(f"=== STDOUT ({len(result.stdout)} chars) ===\n")
+                        lf.write(result.stdout or "(empty)")
+                        lf.write(f"\n=== STDERR ({len(result.stderr)} chars) ===\n")
+                        lf.write(result.stderr or "(empty)")
+                    err_msg = result.stderr or result.stdout or "未知错误（详见 simulation_error.log）"
+                    st.error(f"仿真运行失败（返回码：{result.returncode}）：\n```\n{str(err_msg)[-1500:]}\n```")
+                else:
+                    # Show key output
+                    stdout_lines = result.stdout.strip().split('\n')
+                    # Extract key summary lines
+                    summary_lines = [l for l in stdout_lines if any(k in l for k in 
+                        ['运营成本季度节约', '运营节约:', '各材料节约率', '完成'])]
+                    if summary_lines:
+                        st.info('\n'.join(summary_lines[:10]))
 
-                sim_results.append({
-                    '物料': m['name'], '策略': strategy,
-                    '原策略成本': f"{avg_h:,.0f}", '优化后成本': f"{avg_opt:,.0f}",
-                    '节约额': f"{saving:,.0f}", '节约率': f"{saving_rate:.1f}%"
-                })
-                progress = (m_idx + 1) / len(materials_info)
-                progress_bar.progress(progress)
-                status_text.text(f"进度: {m_idx+1}/{len(materials_info)} - {m['name']} 完成")
+                    # Verify CSV files were generated
+                    mc_csv = os.path.join(RESULT_TABLE_DIR, 'monte_carlo_comparison.csv')
+                    sm_csv = os.path.join(RESULT_TABLE_DIR, 'structural_metrics.csv')
 
-            progress_bar.empty()
-            status_text.empty()
+                    if not os.path.exists(mc_csv):
+                        st.error("仿真完成但未找到 monte_carlo_comparison.csv")
+                    else:
+                        # Clear cache so other pages pick up new data
+                        st.cache_data.clear()
 
-            if sim_results:
-                sim_df = pd.DataFrame(sim_results)
-                st.dataframe(sim_df, use_container_width=True, hide_index=True)
+                        # Read and display results
+                        mc_df = pd.read_csv(mc_csv, encoding='utf-8-sig')
 
-                fig = go.Figure()
-                names = [r['物料'] for r in sim_results]
-                h_costs = [float(r['原策略成本'].replace(',', '')) for r in sim_results]
-                opt_costs = [float(r['优化后成本'].replace(',', '')) for r in sim_results]
-                fig.add_trace(go.Bar(name='H公司原策略', x=names, y=[c / WAN for c in h_costs], marker_color='#e74c3c'))
-                fig.add_trace(go.Bar(name='优化策略', x=names, y=[c / WAN for c in opt_costs], marker_color='#27ae60'))
-                fig.update_layout(barmode='group', title='成本对比（年度化）',
-                                  yaxis_title='成本（万元）', template='plotly_white', height=400)
-                st.plotly_chart(fig, use_container_width=True)
-                st.success("✅ 仿真完成！可调整参数后重新运行。")
+                        # Summary metrics
+                        total_saving = mc_df['op_saving'].sum()
+                        st.metric("运营成本季度节约总额", f"¥{total_saving:,.0f}")
+
+                        # Per-material results
+                        st.markdown("**各材料仿真结果：**")
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            # Cost comparison table
+                            display_df = mc_df[['material', 'h_operational', 'opt_operational', 
+                                               'op_saving', 'op_saving_pct']].copy()
+                            display_df.columns = ['物料', 'H公司运营成本', '优化运营成本', 
+                                                  '节约额', '节约率(%)']
+                            st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+                        with col2:
+                            # Bar chart
+                            fig = go.Figure()
+                            names = mc_df['material'].tolist()
+                            fig.add_trace(go.Bar(name='H公司原策略', x=names, 
+                                                y=[c/WAN for c in mc_df['h_operational']], 
+                                                marker_color='#e74c3c'))
+                            fig.add_trace(go.Bar(name='优化策略', x=names, 
+                                                y=[c/WAN for c in mc_df['opt_operational']], 
+                                                marker_color='#27ae60'))
+                            fig.update_layout(barmode='group', title='运营成本对比（季度）',
+                                             yaxis_title='成本（万元）', 
+                                             template='plotly_white', height=400)
+                            st.plotly_chart(fig, use_container_width=True)
+
+                        # Structural metrics
+                        if os.path.exists(sm_csv):
+                            sm_df = pd.read_csv(sm_csv, encoding='utf-8-sig')
+                            st.markdown("**结构性指标：**")
+                            st.dataframe(sm_df, use_container_width=True, hide_index=True)
+
+                        st.success(f"✅ 仿真完成！运营成本季度节约 ¥{total_saving:,.0f}，结果已同步到所有页面。")
+
+            except subprocess.TimeoutExpired:
+                st.error("仿真超时（>5分钟），请检查源代码是否正常运行")
+            except Exception as e:
+                st.error(f"运行异常：{str(e)}")
